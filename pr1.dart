@@ -100,6 +100,7 @@ void startGame(int size, bool vsRobot, Map<String, int> score) {
   print(green + bold + "Первым ходит '$currentPlayer'" + reset);
 
   bool gameEnded = false;
+// Версия 3.0: добавлен ультимативный режим Гот-Юки 🐺💀
 
   while (!gameEnded) {
     printMatrix(matrix);
