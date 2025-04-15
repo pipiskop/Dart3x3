@@ -1,40 +1,61 @@
 import 'dart:io';
 import 'dart:math';
 
+const String reset = '\x1B[0m';
+const String red = '\x1B[31m';
+const String green = '\x1B[32m';
+const String yellow = '\x1B[33m';
+const String cyan = '\x1B[36m';
+const String bold = '\x1B[1m';
+
+const int championshipWins = 3;
+final File logFile = File('tictactoe_log.txt');
+
+void playSound(String filename) {
+  if (Platform.isLinux) {
+    Process.run('aplay', [filename]);
+  } else if (Platform.isMacOS) {
+    Process.run('afplay', [filename]);
+  }
+}
+
+void log(String message) {
+  logFile.writeAsStringSync('${DateTime.now()}: $message\n', mode: FileMode.append);
+}
+
 List<List<String>> createMatrix(int size) {
-  return List.generate(
-    size,
-    (_) => List.generate(size, (_) => ' '),
-  );
+  return List.generate(size, (_) => List.generate(size, (_) => ' '));
 }
 
 void printMatrix(List<List<String>> matrix) {
-  int size = matrix.length;
-
-  for (int i = 0; i < size; i++) {
+  for (int i = 0; i < matrix.length; i++) {
     String row = '';
-    for (int j = 0; j < size; j++) {
-      row += matrix[i][j];
-      if (j < size - 1) row += ' | ';
+    for (int j = 0; j < matrix.length; j++) {
+      String cell = matrix[i][j];
+      row += cell == 'X'
+          ? red + bold + 'X' + reset
+          : cell == 'O'
+              ? cyan + bold + 'O' + reset
+              : ' ';
+      if (j < matrix.length - 1) row += ' | ';
     }
     print(row);
-    if (i < size - 1) {
-      print(List.filled(size * 4 - 3, '-').join());
-    }
+    if (i < matrix.length - 1) print(List.filled(matrix.length * 4 - 3, '-').join());
   }
   print('');
 }
 
 bool makeMove(List<List<String>> matrix, int row, int col, String symbol) {
   if (row < 0 || row >= matrix.length || col < 0 || col >= matrix.length) {
-    print("Координаты вне диапазона. Попробуйте снова.\n");
+    print(yellow + "Координаты вне диапазона." + reset);
     return false;
   }
   if (matrix[row][col] != ' ') {
-    print("Эта клетка уже занята, выберите другую.\n");
+    print(yellow + "Клетка уже занята!" + reset);
     return false;
   }
   matrix[row][col] = symbol;
+  playSound('move.wav');
   return true;
 }
 
@@ -42,191 +63,121 @@ bool checkWin(List<List<String>> matrix, String symbol) {
   int size = matrix.length;
 
   for (int i = 0; i < size; i++) {
-    bool rowWin = true;
-    for (int j = 0; j < size; j++) {
-      if (matrix[i][j] != symbol) {
-        rowWin = false;
-        break;
-      }
-    }
-    if (rowWin) return true;
+    if (matrix[i].every((c) => c == symbol)) return true;
+    if (List.generate(size, (j) => matrix[j][i]).every((c) => c == symbol)) return true;
   }
 
-  for (int j = 0; j < size; j++) {
-    bool colWin = true;
-    for (int i = 0; i < size; i++) {
-      if (matrix[i][j] != symbol) {
-        colWin = false;
-        break;
-      }
-    }
-    if (colWin) return true;
-  }
-
-  bool diagWin1 = true;
-  for (int i = 0; i < size; i++) {
-    if (matrix[i][i] != symbol) {
-      diagWin1 = false;
-      break;
-    }
-  }
-  if (diagWin1) return true;
-
-  bool diagWin2 = true;
-  for (int i = 0; i < size; i++) {
-    if (matrix[i][size - 1 - i] != symbol) {
-      diagWin2 = false;
-      break;
-    }
-  }
-  if (diagWin2) return true;
+  if (List.generate(size, (i) => matrix[i][i]).every((c) => c == symbol)) return true;
+  if (List.generate(size, (i) => matrix[i][size - 1 - i]).every((c) => c == symbol)) return true;
 
   return false;
 }
 
 bool checkDraw(List<List<String>> matrix) {
   for (var row in matrix) {
-    if (row.contains(' ')) {
-      return false;
-    }
+    if (row.contains(' ')) return false;
   }
   return true;
 }
 
-String getRandomPlayer() {
-  Random random = Random();
-  return random.nextBool() ? 'X' : 'O';
-}
+String getRandomPlayer() => Random().nextBool() ? 'X' : 'O';
 
 void robotMove(List<List<String>> matrix, String symbol) {
-  Random random = Random();
+  Random r = Random();
   while (true) {
-    int row = random.nextInt(matrix.length);
-    int col = random.nextInt(matrix.length);
+    int row = r.nextInt(matrix.length);
+    int col = r.nextInt(matrix.length);
     if (makeMove(matrix, row, col, symbol)) {
-      print("Робот делает ход: ${row + 1} ${col + 1}\n");
+      print(cyan + "\nРобот делает ход: ${row + 1} ${col + 1}" + reset);
       break;
     }
   }
 }
 
-void main() {
-  while (true) {
-    print("Введите размер матрицы (от 3 до 9) для игры 'Крестики-нолики':\n");
+void startGame(int size, bool vsRobot, Map<String, int> score) {
+  List<List<String>> matrix = createMatrix(size);
+  String currentPlayer = getRandomPlayer();
+  print(green + bold + "Первым ходит '$currentPlayer'" + reset);
 
-    String? input = stdin.readLineSync();
+  bool gameEnded = false;
+// Версия 3.0: добавлен ультимативный режим Гот-Юки 🐺💀
 
-    if (input == null || input.isEmpty) {
-      print("Ввод не может быть пустым. Попробуйте снова.\n");
-      continue; 
-    }
+  while (!gameEnded) {
+    printMatrix(matrix);
+    if (!vsRobot || currentPlayer == 'X') {
+      print("Ход '$currentPlayer'. Введите строку и столбец:");
+      String? moveInput = stdin.readLineSync();
 
-    int? size = int.tryParse(input);
+      if (moveInput == null || moveInput.isEmpty) continue;
 
-    if (size == null) {
-      print("Некорректный ввод. Пожалуйста, введите целое число.\n");
-      continue;
-    }
+      List<String> parts = moveInput.trim().split(RegExp(r'\s+'));
+      if (parts.length != 2) continue;
 
-    if (3 <= size && size <= 9) {
-      List<List<String>> matrix = createMatrix(size);
+      int? row = int.tryParse(parts[0]);
+      int? col = int.tryParse(parts[1]);
 
-      print("\nВыберите режим игры:");
-      print("1. Игрок против игрока");
-      print("2. Игрок против робота");
-      String? modeInput = stdin.readLineSync();
-      
-      String currentPlayer = getRandomPlayer();
-      if (modeInput == '1') {
-        print("Игрок '$currentPlayer' начинает первым.\n");
-      } else if (modeInput == '2') {
-        print("Игрок '$currentPlayer' начинает против робота.\n");
-      } else {
-        print("Некорректный ввод. Начнём игру против игрока.\n");
-      }
+      if (row == null || col == null) continue;
 
-      bool gameEnded = false;
-
-      while (!gameEnded) {
-        printMatrix(matrix);
-        if (currentPlayer == 'X') {
-          print("Ход игрока '$currentPlayer'. Введите номер строки и столбца через пробел (например, 1 2): ");
-          String? moveInput = stdin.readLineSync();
-
-          if (moveInput == null || moveInput.isEmpty) {
-            print("Ввод не может быть пустым. Попробуйте снова.\n");
-            continue;
-          }
-
-          List<String> parts = moveInput.trim().split(RegExp(r'\s+'));
-          if (parts.length != 2) {
-            print("Неверный формат ввода. Введите два числа через пробел.\n");
-            continue;
-          }
-
-          int? row = int.tryParse(parts[0])?.toInt() ?? 0;
-          int? col = int.tryParse(parts[1])?.toInt() ?? 0;
-
-          if (row == null || col == null) {
-            print("Некорректный ввод. Пожалуйста, введите целые числа.\n");
-            continue;
-          }
-
-          if (makeMove(matrix, row - 1, col - 1, currentPlayer)) {
-            if (checkWin(matrix, currentPlayer)) {
-              printMatrix(matrix);
-              print("Поздравляем! Игрок '$currentPlayer' выиграл!\n");
-              gameEnded = true;
-              continue;
-            }
-
-            if (checkDraw(matrix)) {
-              printMatrix(matrix);
-              print("Ничья! Все клетки заняты.\n");
-              gameEnded = true;
-              continue;
-            }
-
-            currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
-          }
+      if (makeMove(matrix, row - 1, col - 1, currentPlayer)) {
+        if (checkWin(matrix, currentPlayer)) {
+          playSound('win.wav');
+          printMatrix(matrix);
+          print(green + bold + "🎉 Победил '$currentPlayer'!" + reset);
+          log("Победа: $currentPlayer");
+          score[currentPlayer] = (score[currentPlayer] ?? 0) + 1;
+          gameEnded = true;
+        } else if (checkDraw(matrix)) {
+          playSound('draw.wav');
+          printMatrix(matrix);
+          print(yellow + bold + "😤 Ничья." + reset);
+          log("Ничья.");
+          gameEnded = true;
         } else {
-          robotMove(matrix, currentPlayer);
-
-          if (checkWin(matrix, currentPlayer)) {
-            printMatrix(matrix);
-            print("Поздравляем! Робот '$currentPlayer' выиграл!\n");
-            gameEnded = true;
-            continue;
-          }
-
-          if (checkDraw(matrix)) {
-            printMatrix(matrix);
-            print("Ничья! Все клетки заняты.\n");
-            gameEnded = true;
-            continue;
-          }
-
-          currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
+          currentPlayer = currentPlayer == 'X' ? 'O' : 'X';
         }
       }
-
-      while (true) {
-        print("Хотите сыграть ещё раз? (1 - да, 0 - нет): ");
-        String? restart = stdin.readLineSync()?.trim();
-
-        if (restart == '1') {
-          print("\n---------------------------------\n");
-          break;
-        } else if (restart == '0') {
-          print("Спасибо за игру!");
-          exit(0);
-        } else {
-          print("Некорректный ввод. Пожалуйста, ответьте '1' или '0'.\n");
-        }
-      }
-
     } else {
-      print("Неправильно! Введите число от 3 до 9.\n");
+      robotMove(matrix, currentPlayer);
+      if (checkWin(matrix, currentPlayer)) {
+        playSound('win.wav');
+        printMatrix(matrix);
+        print(red + bold + "🤖 Робот '$currentPlayer' победил!" + reset);
+        log("Победа: Робот ($currentPlayer)");
+        score[currentPlayer] = (score[currentPlayer] ?? 0) + 1;
+        gameEnded = true;
+      } else if (checkDraw(matrix)) {
+        playSound('draw.wav');
+        printMatrix(matrix);
+        print(yellow + bold + "😤 Ничья." + reset);
+        log("Ничья.");
+        gameEnded = true;
+      } else {
+        currentPlayer = 'X';
+      }
     }
   }
+}
+
+void main() {
+  print(magenta + "🏆 Чемпионат по Крестикам-ноликам!" + reset);
+  print("Введите размер поля (3–9): ");
+  int? size = int.tryParse(stdin.readLineSync() ?? '');
+  if (size == null || size < 3 || size > 9) {
+    print("Неверный размер. По умолчанию 3x3.");
+    size = 3;
+  }
+
+  print("\nРежим: 1 – Игрок против игрока, 2 – Против робота");
+  bool vsRobot = (stdin.readLineSync() == '2');
+
+  Map<String, int> score = {'X': 0, 'O': 0};
+
+  while (score.values.every((s) => s < championshipWins)) {
+    startGame(size, vsRobot, score);
+    print("\n$boldСчёт: X=${score['X']} | O=${score['O']}$reset\n");
+  }
+
+  String winner = score.entries.firstWhere((e) => e.value == championshipWins).key;
+  print(green + bold + "\n🏆 Победитель чемпионата: '$winner'! Поздравляем!" + reset);
+  log("Чемпионат выиграл: $winner");
 }
